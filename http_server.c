@@ -1,83 +1,64 @@
+#include <pthread.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "http_server.h"
 
-void read_http_client_message(int client_sock, http_client_message_t** msg, http_read_result_t* result) {
-    char buffer[HTTP_BUFFER_SIZE];
-    ssize_t bytes_received;
-    size_t total_bytes_received = 0;
-    int header_index = 0;
-    int in_body = 0;
-    
-    result->status_code = 0;
-    result->bytes_read = 0;
-    result->error_message = NULL;
+int main(int argc, char *argv[]) {
+    int port = 8080;
+    if (argc == 3 && strcmp(argv[1], "-p") == 0) 
+    {
+        port = atoi(argv[2]);
+    } else if (argc != 1) {
+        fprintf(stderr, "Usage: %s [-p <port>]\n", argv[0]);
 
-    *msg = (http_client_message_t*)malloc(sizeof(http_client_message_t));
-    if (*msg == NULL) {
-        result->status_code = 1;
-        result->error_message = "Allocation failed";
-        return;
+        exit(EXIT_FAILURE);
     }
 
-    memset(*msg, 0, sizeof(http_client_message_t));
+    int server_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_sock < 0) {
+        perror("Socket creation failed.");
 
-    while ((bytes_received = recv(client_sock, buffer, sizeof(buffer), 0)) > 0) {
-        total_bytes_received += bytes_received;
+        exit(EXIT_FAILURE);
+    }
 
-        for (size_t i = 0; i < bytes_received; i++) {
-            if (!in_body) {
-                if (buffer[i] == '\r' && i + 1 < bytes_received && buffer[i + 1] == '\n') {
-                    if (header_index == 0) 
-                    {
-                        in_body = 1;
-                    } else {
-                        char *line = &buffer[i + 2];
-                        char *colon_pos = strchr(line, ':');
-                        if (colon_pos) {
-                            *colon_pos = '\0';
-                            strncpy((*msg)->headers[header_index][0], line, MAX_HEADER_NAME_LENGTH);
-                            strncpy((*msg)->headers[header_index][1], colon_pos + 1, MAX_HEADER_VALUE_LENGTH);
-                            header_index++;
-                        }
-                    }
+    struct sockaddr_in server_addr = {0};
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(port);
 
-                    i++;
-                }
-            }
+    if (bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Bind failed");
+        close(server_sock);
 
-            if (header_index == 0 && buffer[i] != '\r') {
-                char *line_start = &buffer[i];
-                char *space_pos = strchr(line_start, ' ');
-                if (!space_pos) break;
-                *space_pos = '\0';
-                strncpy((*msg)->method, line_start, sizeof((*msg)->method));
+        exit(EXIT_FAILURE);
+    }
 
-                line_start = space_pos + 1;
-                space_pos = strchr(line_start, ' ');
-                if (!space_pos) break;
-                *space_pos = '\0';
-                strncpy((*msg)->url, line_start, sizeof((*msg)->url));
+    if (listen(server_sock, 10) < 0) {
+        perror("Listen failed");
+        close(server_sock);
 
-                line_start = space_pos + 1;
-                strncpy((*msg)->version, line_start, sizeof((*msg)->version));
-            }
+        exit(EXIT_FAILURE);
+    }
+    printf("Server running on port %d\n", port);
 
-            if (in_body) {
-                size_t remaining_space = HTTP_BUFFER_SIZE - (*msg)->body_length;
-                if (remaining_space > 0) {
-                    (*msg)->body[(*msg)->body_length++] = buffer[i];
-                }
-            }
+    while (1) {
+        int client_sock = accept(server_sock, NULL, NULL);
+
+        if (client_sock < 0) {
+            perror("Accept failed");
+
+            continue;
         }
 
-        if (bytes_received < sizeof(buffer)) {
-            break;
-        }
+        pthread_t thread;
+        pthread_create(&thread, NULL, handle_client, (void *)(intptr_t)client_sock);
+        pthread_detach(thread);
     }
 
-    result->bytes_read = total_bytes_received;
-
-    if (bytes_received <= 0) {
-        result->status_code = 2;
-        result->error_message = "Failed to read data";
-    }
+    close(server_sock);
+    return 0;
 }
