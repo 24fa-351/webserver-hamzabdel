@@ -1,16 +1,16 @@
-#include <pthread.h>
 #include <netinet/in.h>
-#include <unistd.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "http_server.h"
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[])
+{
     int port = 8080;
-    if (argc == 3 && strcmp(argv[1], "-p") == 0) 
-    {
+    if (argc == 3 && strcmp(argv[1], "-p") == 0) {
         port = atoi(argv[2]);
     } else if (argc != 1) {
         fprintf(stderr, "Usage: %s [-p <port>]\n", argv[0]);
@@ -25,12 +25,13 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    struct sockaddr_in server_addr = {0};
+    struct sockaddr_in server_addr = { 0 };
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(port);
 
-    if (bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+    if (bind(server_sock, (struct sockaddr*)&server_addr, sizeof(server_addr))
+        < 0) {
         perror("Bind failed");
         close(server_sock);
 
@@ -55,7 +56,8 @@ int main(int argc, char *argv[]) {
         }
 
         pthread_t thread;
-        pthread_create(&thread, NULL, handle_client, (void *)(intptr_t)client_sock);
+        pthread_create(
+            &thread, NULL, handle_client, (void*)(intptr_t)client_sock);
         pthread_detach(thread);
     }
 
